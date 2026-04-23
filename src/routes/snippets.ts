@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, Response } from "express";
 import crypto from "crypto";
 import mongoose from "mongoose";
 import { z } from "zod";
@@ -14,8 +14,8 @@ const createSchema = z.object({
   language: z.string().default("plaintext"),
 });
 
-// POST /api/snippets  — create & share a snippet
-router.post("/", async (req: AuthRequest, res) => {
+// POST /api/snippets
+router.post("/", async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
 
@@ -24,14 +24,10 @@ router.post("/", async (req: AuthRequest, res) => {
       return res.status(400).json({ message: parsed.error.issues[0].message });
 
     const { title, code, language } = parsed.data;
-
-    // generate a short, collision-resistant share ID  (e.g. "a3f9b2")
     const shareId = crypto.randomBytes(4).toString("hex");
 
     const snippet = await SharedSnippetModel.create({
-      title,
-      code,
-      language,
+      title, code, language,
       ownerUserId: new mongoose.Types.ObjectId(req.user.id),
       shareId,
     });
@@ -39,13 +35,13 @@ router.post("/", async (req: AuthRequest, res) => {
     await ActivityLogModel.create({
       userId: new mongoose.Types.ObjectId(req.user.id),
       action: `Snippet shared: ${title}`,
-      ipAddress: (req as any).ip,
+      ipAddress: req.ip,
     });
 
     res.status(201).json({
-      id:       String(snippet._id),
-      shareId:  snippet.shareId,
-      title:    snippet.title,
+      id: String(snippet._id),
+      shareId: snippet.shareId,
+      title: snippet.title,
       language: snippet.language,
       createdAt: snippet.createdAt,
     });
@@ -55,13 +51,13 @@ router.post("/", async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/snippets/my  — list snippets the current user created
-router.get("/my", async (req: AuthRequest, res) => {
+// GET /api/snippets/my
+router.get("/my", async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
 
     const snippets = await SharedSnippetModel.find({ ownerUserId: req.user.id })
-      .select("-code")           // don't send full code in list view
+      .select("-code")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -72,21 +68,19 @@ router.get("/my", async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/snippets/:shareId  — fetch a snippet by its share code (any logged-in user)
-router.get("/:shareId", async (req: AuthRequest, res) => {
+// GET /api/snippets/:shareId
+router.get("/:shareId", async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
 
-    const { shareId } = (req as any).params;
-    const snippet = await SharedSnippetModel.findOne({ shareId }).lean();
-
+    const snippet = await SharedSnippetModel.findOne({ shareId: req.params.shareId }).lean();
     if (!snippet)
       return res.status(404).json({ message: "Snippet not found. Check the share code." });
 
     await ActivityLogModel.create({
       userId: new mongoose.Types.ObjectId(req.user.id),
       action: `Snippet viewed: ${snippet.title}`,
-      ipAddress: (req as any).ip,
+      ipAddress: req.ip,
     });
 
     res.json({ ...snippet, id: String(snippet._id) });
@@ -96,26 +90,24 @@ router.get("/:shareId", async (req: AuthRequest, res) => {
   }
 });
 
-// DELETE /api/snippets/:shareId  — owner can delete their snippet
-router.delete("/:shareId", async (req: AuthRequest, res) => {
+// DELETE /api/snippets/:shareId
+router.delete("/:shareId", async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ message: "Unauthorized" });
 
-    const { shareId } = (req as any).params;
-    const snippet = await SharedSnippetModel.findOne({ shareId });
-
+    const snippet = await SharedSnippetModel.findOne({ shareId: req.params.shareId });
     if (!snippet)
       return res.status(404).json({ message: "Snippet not found" });
 
     if (String(snippet.ownerUserId) !== String(req.user.id))
       return res.status(403).json({ message: "Forbidden" });
 
-    await SharedSnippetModel.deleteOne({ shareId });
+    await SharedSnippetModel.deleteOne({ shareId: req.params.shareId });
 
     await ActivityLogModel.create({
       userId: new mongoose.Types.ObjectId(req.user.id),
       action: `Snippet deleted: ${snippet.title}`,
-      ipAddress: (req as any).ip,
+      ipAddress: req.ip,
     });
 
     res.json({ message: "Snippet deleted" });
