@@ -5,6 +5,7 @@ import { connectDB } from "./config/db";
 import authRoutes from "./routes/auth";
 import fileRoutes, { ensureUploadsDir } from "./routes/files";
 import logRoutes from "./routes/logs";
+import snippetRoutes from "./routes/snippets";
 import { authenticateToken } from "./middleware/auth";
 import serverless from "serverless-http";
 
@@ -15,17 +16,17 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
-app.use("/api/auth", authRoutes);
-app.use("/api/files", authenticateToken, fileRoutes);
-app.use("/api/logs", authenticateToken, logRoutes);
+app.use("/api/auth",     authRoutes);
+app.use("/api/files",    authenticateToken, fileRoutes);
+app.use("/api/logs",     authenticateToken, logRoutes);
+app.use("/api/snippets", authenticateToken, snippetRoutes);
 
-// Error handler (keep AFTER routes)
+// Error handler
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error("Unhandled error", err);
   res.status(500).json({ message: "Internal server error" });
 });
 
-// 🔥 Initialize DB & folders (runs once)
 let isInitialized = false;
 
 async function init() {
@@ -37,7 +38,6 @@ async function init() {
   }
 }
 
-// ✅ LOCAL DEV (works normally)
 if (!process.env.VERCEL) {
   init()
     .then(() => {
@@ -52,7 +52,6 @@ if (!process.env.VERCEL) {
     });
 }
 
-// ✅ VERCEL HANDLER (IMPORTANT)
 const handler = serverless(app);
 
 export default async function handlerWrapper(req: any, res: any) {
